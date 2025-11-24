@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Executing {{ script_name }} - Support Automation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Executing Script</h1>
+            <p>{{ script_name }}</p>
+
+            <!-- Customer Dropdown -->
+            <div style="margin: 1rem 0;">
+                <label for="customer-select" style="font-weight: 500; margin-right: 0.5rem;">Customer:</label>
+                <select id="customer-select" onchange="changeCustomer()"
+                    style="padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text); font-family: 'Inter', sans-serif; min-width: 200px;">
+                    <option value="">-- Select Customer --</option>
+                    {% for cust in customers %}
+                    <option value="{{ cust.customer_name }}" {% if cust.customer_name==selected_customer %}selected{%
+                        endif %}>
+                        {{ cust.customer_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Args Input -->
+            <div style="margin: 1rem 0;">
+                <label for="args-input" style="font-weight: 500; margin-right: 0.5rem;">Arguments:</label>
+                <input type="text" id="args-input" placeholder="e.g. --verbose --dry-run"
+                    style="padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text); font-family: 'Fira Code', monospace; min-width: 300px;">
+            </div>
+
+            <!-- Token Field (conditional) -->
+            {% if requires_token %}
+            <div style="margin: 1rem 0;">
+                <label for="token-field" style="font-weight: 500; margin-right: 0.5rem;">Authentication Token:</label>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem;">
+                    <input type="text" id="token-field" readonly
+                        style="flex: 1; padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text); font-family: 'Fira Code', monospace; font-size: 0.85rem;"
+                        placeholder="Click refresh to generate token...">
+                    <button onclick="copyToken()" class="secondary-btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;"
+                        title="Copy token to clipboard">
+                        📋 Copy
+                    </button>
+                    <button onclick="refreshToken()" class="primary-btn"
+                        style="padding: 0.5rem 1rem; font-size: 0.9rem;" title="Generate new token">
+                        ↻ Refresh
+                    </button>
+                </div>
+                <div id="token-status" style="font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em;"></div>
+            </div>
+            {% endif %}
+
+            <!-- Action Buttons -->
+            <div style="margin: 1rem 0; display: flex; gap: 0.5rem; align-items: center;">
+                <button id="start-btn" onclick="startExecution()" class="primary-btn"
+                    style="padding: 0.5rem 1rem; font-size: 0.9rem;">
+                    ▶ Start Execution
+                </button>
+                <button id="run-again-btn" onclick="runAgain()" class="primary-btn"
+                    style="text-decoration: none; font-size: 0.9rem; display: none;">
+                    ↻ Run Again
+                </button>
+                <button id="kill-btn" onclick="killExecution()" class="danger-btn"
+                    style="text-decoration: none; font-size: 0.9rem; display: none;">
+                    ⏹ Kill Execution
+                </button>
+                <button onclick="goBack()" class="secondary-btn" style="text-decoration: none; font-size: 0.9rem;">
+                    ← Back to Dashboard
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <div class="card terminal-card">
+                <div class="terminal-header">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                    <span class="terminal-title">Terminal Output</span>
+                </div>
+                <div id="terminal-output" class="terminal-body"></div>
+                <div class="terminal-input-area">
+                    <span class="prompt">></span>
+                    <input type="text" id="terminal-input" placeholder="Type here..." autocomplete="off">
+                    <button id="send-btn" class="primary-btn"
+                        style="width: auto; padding: 0.5rem 1rem; margin-left: 0.5rem;">Send</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const socket = io();
+
+        // DOM Elements
+        const terminalOutput = document.getElementById('terminal-output');
+        const terminalInput = document.getElementById('terminal-input');
+        const sendBtn = document.getElementById('send-btn');
+        const startBtn = document.getElementById('start-btn');
+        const runAgainBtn = document.getElementById('run-again-btn');
+        const killBtn = document.getElementById('kill-btn');
+        const customerSelect = document.getElementById('customer-select');
+        const argsInput = document.getElementById('args-input');
+        const tokenField = document.getElementById('token-field');
+        const tokenStatus = document.getElementById('token-status');
+
+        // Server Data
+        const scriptName = "{{ script_name }}";
+        const allCustomers = {{ customers | tojson }};
+        const requiresToken = {{ requires_token | tojson }};
+        const initialArgs = []; // Can be populated from server if needed
+
+        // State
+        let scriptRunning = false;
+        let hasStarted = false;
+        let currentToken = '';
+
+        // Token management functions
+        async function refreshToken() {
+            if (!customerSelect.value) {
+                updateTokenStatus('Please select a customer first', 'error');
+                return;
+            }
+
+            try {
+                updateTokenStatus('Generating token...', 'info');
+                const response = await fetch('/api/token/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        customer_name: customerSelect.value
+                    })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    currentToken = data.token;
+                    if (tokenField) tokenField.value = currentToken;
+                    const expiresIn = Math.floor(data.expires_in / 60);
+                    updateTokenStatus(`Token generated successfully (expires in ${expiresIn} minutes)`, 'success');
+                } else {
+                    updateTokenStatus('Failed to generate token: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                updateTokenStatus('Error generating token: ' + error.message, 'error');
+            }
+        }
+
+        function copyToken() {
+            if (!tokenField || !tokenField.value) {
+                updateTokenStatus('No token to copy. Click refresh to generate one.', 'error');
+                return;
+            }
+
+            tokenField.select();
+            document.execCommand('copy');
+            updateTokenStatus('Token copied to clipboard!', 'success');
+
+            // Clear selection after a moment
+            setTimeout(() => {
+                window.getSelection().removeAllRanges();
+            }, 100);
+        }
+
+        function updateTokenStatus(message, type) {
+            if (!tokenStatus) return;
+
+            tokenStatus.textContent = message;
+            if (type === 'success') {
+                tokenStatus.style.color = '#4ade80';
+            } else if (type === 'error') {
+                tokenStatus.style.color = '#f87171';
+            } else {
+                tokenStatus.style.color = 'var(--text-secondary)';
+            }
+        }
+
+        // Handle customer change
+        function changeCustomer() {
+            const selectedCustomerName = customerSelect.value;
+            // Update URL and reload
+            const url = new URL(window.location);
+            url.searchParams.set('customer', selectedCustomerName);
+            window.location.href = url.toString();
+        }
+
+        // Auto-scroll to bottom
+        function scrollToBottom() {
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
+        }
+
+        function appendOutput(text, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `line ${type}`;
+            div.textContent = text;
+            terminalOutput.appendChild(div);
+            scrollToBottom();
+            // Reset stream tracking on explicit line append
+            lastOutputElement = null;
+        }
+
+        let lastOutputElement = null;
+
+        function processStreamOutput(text) {
+            if (!lastOutputElement) {
+                lastOutputElement = document.createElement('div');
+                lastOutputElement.className = 'line output';
+                terminalOutput.appendChild(lastOutputElement);
+            }
+            lastOutputElement.textContent += text;
+            scrollToBottom();
+        }
+
+        function updateButtonStates() {
+            if (scriptRunning) {
+                killBtn.style.display = 'inline-block';
+                runAgainBtn.style.display = 'none';
+                startBtn.style.display = 'none';
+            } else {
+                killBtn.style.display = 'none';
+                if (hasStarted) {
+                    runAgainBtn.style.display = 'inline-block';
+                    startBtn.style.display = 'none';
+                } else {
+                    startBtn.style.display = 'inline-block';
+                    runAgainBtn.style.display = 'none';
+                }
+            }
+        }
+
+        function startScript() {
+            // Get args from input
+            const currentArgs = argsInput ? argsInput.value.split(' ').filter(arg => arg.length > 0) : initialArgs;
+
+            scriptRunning = true;
+            updateButtonStates();
+            appendOutput('Connected to server...', 'system');
+            appendOutput(`Starting ${scriptName}...`, 'system');
+
+            socket.emit('start_script', {
+                script: scriptName,
+                args: currentArgs
+            });
+        }
+
+        function startExecution() {
+            if (!hasStarted) {
+                hasStarted = true;
+            }
+            startScript();
+        }
+
+        function killExecution() {
+            if (scriptRunning) {
+                socket.emit('kill_script');
+                appendOutput('\nKilling process...', 'system');
+                scriptRunning = false;
+                updateButtonStates();
+            }
+        }
+
+        socket.on('output', (data) => {
+            processStreamOutput(data.data);
+        });
+
+        socket.on('script_done', (data) => {
+            appendOutput(`\nProcess finished with exit code ${data.returncode}`, 'system');
+            scriptRunning = false;
+            updateButtonStates();
+        });
+
+        function sendInput() {
+            const text = terminalInput.value;
+            if (text) {
+                appendOutput(`> ${text}`, 'input-echo');
+                socket.emit('input', { data: text + '\n' });
+                terminalInput.value = '';
+            }
+        }
+
+        function runAgain() {
+            // Kill current script if running
+            if (scriptRunning) {
+                socket.emit('kill_script');
+            }
+
+            // Clear terminal
+            terminalOutput.innerHTML = '';
+
+            // Restart script
+            setTimeout(() => {
+                startScript();
+            }, 500);
+        }
+
+        function goBack() {
+            if (scriptRunning) {
+                socket.emit('kill_script');
+            }
+            window.location.href = '/';
+        }
+
+        sendBtn.addEventListener('click', sendInput);
+        terminalInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendInput();
+            }
+        });
+
+        // Auto-generate token on page load if required and customer is selected
+        if (requiresToken && customerSelect && customerSelect.value) {
+            refreshToken();
+        }
+
+        // Initial button state update
+        updateButtonStates();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration - Support Automation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Configuration</h1>
+            <p>Manage customer credentials and settings.</p>
+            <a href="/" class="nav-link">← Back to Dashboard</a>
+        </header>
+
+        <main>
+            <div class="card">
+                <h2>Add New Customer</h2>
+                <form id="add-customer-form">
+                    <div class="grid-2">
+                        <div class="input-group">
+                            <label for="new_customer_name">Customer Name</label>
+                            <input type="text" id="new_customer_name" name="customer_name" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="new_client_id">Catalogue Client ID</label>
+                            <input type="text" id="new_client_id" name="catalogueClientID" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="new_region">AWS Region</label>
+                            <input type="text" id="new_region" name="aws-region" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="primary-btn">Add Customer</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h2>Existing Customers</h2>
+                <div class="customer-list">
+                    {% for customer in customers %}
+                    <div class="customer-item">
+                        <div class="customer-header">
+                            <h3>{{ customer.customer_name }}</h3>
+                            <span class="badge">{{ customer['aws-region'] }}</span>
+                        </div>
+                        <form class="customer-form" onsubmit="updateCustomer(event, '{{ customer.customer_name }}')">
+                            <input type="hidden" name="customer_name" value="{{ customer.customer_name }}">
+                            <input type="hidden" name="catalogueClientID" value="{{ customer.catalogueClientID }}">
+                            <input type="hidden" name="aws-region" value="{{ customer['aws-region'] }}">
+
+                            <div class="grid-2">
+                                <div class="input-group">
+                                    <label>Username</label>
+                                    <input type="text" name="username" value="{{ customer.username }}"
+                                        placeholder="Username">
+                                </div>
+                                <div class="input-group">
+                                    <label>Password</label>
+                                    <input type="password" name="password" value="{{ customer.password }}"
+                                        placeholder="Password">
+                                </div>
+                            </div>
+                            <button type="submit" class="secondary-btn">Save Credentials</button>
+                            <button type="button" class="danger-btn"
+                                onclick="deleteCustomer('{{ customer.customer_name }}')">Delete</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.getElementById('add-customer-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            await saveCustomer(data);
+            window.location.reload();
+        });
+
+        async function updateCustomer(e, name) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            await saveCustomer(data);
+            alert('Saved!');
+        }
+
+        async function saveCustomer(data) {
+            try {
+                await fetch('/api/customers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+            } catch (err) {
+                alert('Error saving: ' + err.message);
+            }
+        }
+
+        async function deleteCustomer(name) {
+            if (!confirm(`Are you sure you want to delete ${name}?`)) return;
+
+            try {
+                await fetch(`/api/customers/${encodeURIComponent(name)}`, {
+                    method: 'DELETE'
+                });
+                window.location.reload();
+            } catch (err) {
+                alert('Error deleting: ' + err.message);
+            }
+        }
+    </script>
+</body>
+
+</html>

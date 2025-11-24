@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Automation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Support Automation</h1>
+            <p>Select a script to execute support tasks.</p>
+            <div class="header-actions">
+                <select id="customer-select" onchange="updateCustomerContext()">
+                    <option value="">-- Select Customer --</option>
+                    {% for customer in customers %}
+                    <option value="{{ customer.customer_name }}">{{ customer.customer_name }}</option>
+                    {% endfor %}
+                </select>
+                <a href="/config" class="config-link">⚙️ Configure</a>
+            </div>
+        </header>
+
+        <main>
+            <div class="card">
+                <div class="card-header-with-action">
+                    <h2>Available Scripts</h2>
+                    <a href="/manage_scripts" class="primary-btn">+ Add New Script</a>
+                </div>
+                <div class="script-list">
+                    {% for script in scripts %}
+                    <div class="script-item">
+                        <button class="script-btn" onclick="selectScript('{{ script }}')">
+                            {{ script }}
+                        </button>
+                        <div class="script-actions">
+                            <button class="icon-btn edit-btn" onclick="editScript(event, '{{ script }}')" title="Edit">
+                                ✏️
+                            </button>
+                            <button class="icon-btn delete-btn" onclick="deleteScript(event, '{{ script }}')"
+                                title="Delete">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function selectScript(scriptName) {
+            const customerSelect = document.getElementById('customer-select');
+            const customer = customerSelect.value;
+
+            const params = new URLSearchParams({
+                script: scriptName,
+                customer: customer
+            });
+            window.location.href = `/execute_page?${params.toString()}`;
+        }
+
+        function editScript(event, scriptName) {
+            event.stopPropagation();
+            window.location.href = `/manage_scripts?edit=${encodeURIComponent(scriptName)}`;
+        }
+
+        async function deleteScript(event, scriptName) {
+            event.stopPropagation();
+
+            if (!confirm(`Are you sure you want to delete "${scriptName}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/scripts/${encodeURIComponent(scriptName)}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert('Script deleted successfully!');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function updateCustomerContext() {
+            // Optional: Add logic if needed when customer changes
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Scripts - Support Automation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Manage Scripts</h1>
+            <p>Upload, edit, or delete automation scripts.</p>
+            <div class="header-actions">
+                <a href="/" class="nav-link">← Back to Dashboard</a>
+            </div>
+        </header>
+
+        <main>
+            <!-- Upload New Script -->
+            <div class="card">
+                <h2>{{ 'Edit Script' if edit_mode else 'Upload New Script' }}</h2>
+                <form id="script-form" enctype="multipart/form-data">
+                    <div class="input-group">
+                        <label for="script-name">Script Name</label>
+                        <input type="text" id="script-name" name="script_name" placeholder="e.g., user_management.py"
+                            value="{{ script_data.name if edit_mode else '' }}" {{ 'readonly' if edit_mode else '' }}
+                            required>
+                        <small style="color: var(--text-secondary); font-size: 0.75rem;">Must end with .py</small>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="script-file">Python File {{ '(Optional - leave empty to keep existing)' if edit_mode
+                            else '' }}</label>
+                        <input type="file" id="script-file" name="script_file" accept=".py" {{ 'required' if not
+                            edit_mode else '' }}>
+                    </div>
+
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="requires-input" name="requires_input" {{ 'checked' if edit_mode
+                                and script_data.requires_input else '' }}>
+                            <span>Requires User Input</span>
+                        </label>
+                        <small style="color: var(--text-secondary); font-size: 0.75rem;">Check if this script needs
+                            interactive input during execution</small>
+                    </div>
+
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="requires-token" name="requires_token" {{ 'checked' if edit_mode
+                                and script_data.requires_token else '' }}>
+                            <span>Requires Authentication Token</span>
+                        </label>
+                        <small style="color: var(--text-secondary); font-size: 0.75rem;">Check if this script needs an
+                            auth token to run</small>
+                    </div>
+
+                    <div class="button-group">
+                        <button type="submit" class="primary-btn">
+                            {{ 'Update Script' if edit_mode else 'Upload Script' }}
+                        </button>
+                        {% if edit_mode %}
+                        <a href="/manage_scripts" class="secondary-btn">Cancel</a>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+
+            <!-- Existing Scripts List -->
+            <div class="card">
+                <h2>Existing Scripts</h2>
+                <div class="scripts-table">
+                    {% if scripts %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Script Name</th>
+                                <th>Requires Input</th>
+                                <th>Requires Token</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for script in scripts %}
+                            <tr>
+                                <td class="script-name">{{ script.name }}</td>
+                                <td>
+                                    <span
+                                        class="badge {{ 'badge-success' if script.requires_input else 'badge-neutral' }}">
+                                        {{ 'Yes' if script.requires_input else 'No' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span
+                                        class="badge {{ 'badge-success' if script.requires_token else 'badge-neutral' }}">
+                                        {{ 'Yes' if script.requires_token else 'No' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="icon-btn edit-btn" onclick="editScript('{{ script.name }}')"
+                                            title="Edit">
+                                            ✏️
+                                        </button>
+                                        <button class="icon-btn delete-btn" onclick="deleteScript('{{ script.name }}')"
+                                            title="Delete">
+                                            🗑️
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No scripts available.
+                        Upload one to get started!</p>
+                    {% endif %}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const form = document.getElementById('script-form');
+        const editMode = {{ 'true' if edit_mode else 'false' }};
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData();
+            const scriptName = document.getElementById('script-name').value;
+            const scriptFile = document.getElementById('script-file').files[0];
+            const requiresInput = document.getElementById('requires-input').checked;
+            const requiresToken = document.getElementById('requires-token').checked;
+
+            // Validate script name ends with .py
+            if (!scriptName.endsWith('.py')) {
+                alert('Script name must end with .py');
+                return;
+            }
+
+            formData.append('script_name', scriptName);
+            formData.append('requires_input', requiresInput);
+            formData.append('requires_token', requiresToken);
+
+            if (scriptFile) {
+                formData.append('script_file', scriptFile);
+            } else if (!editMode) {
+                alert('Please select a Python file to upload');
+                return;
+            }
+
+            try {
+                const url = editMode ? `/api/scripts/${scriptName}` : '/api/scripts';
+                const method = editMode ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert(editMode ? 'Script updated successfully!' : 'Script uploaded successfully!');
+                    window.location.href = '/manage_scripts';
+                } else {
+                    alert('Error: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+
+        function editScript(scriptName) {
+            window.location.href = `/manage_scripts?edit=${encodeURIComponent(scriptName)}`;
+        }
+
+        async function deleteScript(scriptName) {
+            if (!confirm(`Are you sure you want to delete "${scriptName}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/scripts/${encodeURIComponent(scriptName)}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert('Script deleted successfully!');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+    </script>
+</body>
+
+</html>
