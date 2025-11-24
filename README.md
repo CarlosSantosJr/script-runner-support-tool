@@ -30,6 +30,11 @@ The **Script Runner Support Tool** is a web-based application designed to stream
     pip install -r requirements.txt
     ```
 
+4.  **Setup Scripts**:
+    *   Manually create a folder named `scripts` in the project root directory.
+    *   Manually copy your Python scripts (`.py` files) into this `scripts` folder.
+    *   *(Note: The web interface upload functionality is currently not working, so manual placement is required).*
+
 ## Running the Application
 
 1.  **Start the Flask server**:
@@ -55,6 +60,7 @@ The main dashboard lists available scripts and customers. Select a script and a 
 *   Navigate to the **Manage Scripts** page.
 *   **Upload**: Add new `.py` scripts to the library. You can specify if a script requires user input or an authentication token.
 *   **Edit/Delete**: Update existing scripts or remove them from the system.
+*   **Important Note**: Currently, the upload functionality is under maintenance. Please manually place your `.py` files into the `scripts/` directory. You can still use this page to configure script requirements.
 
 ### Executing Scripts
 1.  Select a script and a customer from the Dashboard.
